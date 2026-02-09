@@ -10,49 +10,67 @@
             padding: 15px;
             background: transparent;
         }
-        .debug-container {
-            text-align: left;
+        .price-container {
+            text-align: center;
+        }
+        .price-display {
+            font-size: 36px;
+            font-weight: 700;
+            color: #C9B986;
+            line-height: 1.2;
+        }
+        .price-period {
+            font-size: 16px;
+            color: #666;
+            margin-top: 5px;
+            font-weight: 400;
+        }
+        .loading {
+            color: #999;
+            font-style: italic;
+            font-size: 18px;
+        }
+        .error {
+            color: #d9534f;
+            font-size: 16px;
+        }
+        .last-updated {
             font-size: 12px;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .debug-item {
-            background: #f5f5f5;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-        }
-        pre {
-            background: #333;
-            color: #0f0;
-            padding: 10px;
-            overflow-x: auto;
-            border-radius: 5px;
+            color: #999;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="debug-container">
-        <h2>Monday.com Debug View</h2>
-        <div id="output">Loading data...</div>
+    <div class="price-container">
+        <div id="pricing" class="loading">Loading price...</div>
     </div>
 
     <script>
+        // Configuration
         const MONDAY_API_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjE4NDEzNjc3MiwidWlkIjoyNTA1OTE2OSwiaWFkIjoiMjAyMi0xMC0wM1QxNjo1OTo0My44MTJaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTAwNzQyNDUsInJnbiI6InVzZTEifQ.x9zltqwDc38J_rbuFt5jg3Ea-3Wq9b4s4yFBrnFuix8';
         const BOARD_ID = 2388987554;
+        const PRICE_COLUMN_ID = 'formula_mkzm99hj';
         
-        async function debugBoard() {
+        // Get apartment identifier from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const propertyRef = urlParams.get('id') || urlParams.get('ref') || urlParams.get('property_ref');
+        
+        async function fetchPrice() {
+            if (!propertyRef) {
+                document.getElementById('pricing').innerHTML = '<div class="error">No property reference specified</div>';
+                return;
+            }
+
             const query = `query {
                 boards(ids: ${BOARD_ID}) {
-                    items_page(limit: 5) {
+                    items_page {
                         items {
                             id
                             name
                             column_values {
                                 id
-                                title
                                 text
-                                value
                             }
                         }
                     }
@@ -70,44 +88,54 @@
                     body: JSON.stringify({ query })
                 });
 
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+
                 const data = await response.json();
                 
                 if (data.errors) {
-                    document.getElementById('output').innerHTML = `<div class="debug-item"><strong>Error:</strong> ${data.errors[0].message}</div>`;
-                    return;
+                    throw new Error(data.errors[0].message);
                 }
                 
+                // Find the apartment by Property REF column value
                 const items = data.data.boards[0].items_page.items;
-                
-                let output = '<h3>First 5 Apartments:</h3>';
-                
-                items.forEach((item, index) => {
-                    output += `<div class="debug-item">`;
-                    output += `<strong>Apartment ${index + 1}:</strong><br>`;
-                    output += `<strong>Item ID:</strong> ${item.id}<br>`;
-                    output += `<strong>Name:</strong> ${item.name}<br><br>`;
-                    output += `<strong>Columns:</strong><br>`;
-                    
-                    item.column_values.forEach(col => {
-                        if (col.text || col.value) {
-                            output += `- <strong>${col.title}</strong> (${col.id}): ${col.text || 'N/A'}<br>`;
-                        }
-                    });
-                    
-                    output += `</div>`;
+                const apartment = items.find(item => {
+                    const propRefColumn = item.column_values.find(col => col.id === 'item_id');
+                    return propRefColumn && propRefColumn.text === propertyRef;
                 });
-                
-                output += '<h3>Full JSON Response:</h3>';
-                output += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-                
-                document.getElementById('output').innerHTML = output;
-                
+
+                if (apartment) {
+                    // Find the price column
+                    const priceColumn = apartment.column_values.find(
+                        col => col.id === PRICE_COLUMN_ID
+                    );
+
+                    if (priceColumn && priceColumn.text) {
+                        const price = priceColumn.text;
+                        
+                        // Format the price display
+                        document.getElementById('pricing').innerHTML = `
+                            <div class="price-display">
+                                £${price}
+                            </div>
+                            <div class="price-period">per week</div>
+                            <div class="last-updated">Updated: ${new Date().toLocaleDateString()}</div>
+                        `;
+                    } else {
+                        document.getElementById('pricing').innerHTML = '<div class="error">Price not available</div>';
+                    }
+                } else {
+                    document.getElementById('pricing').innerHTML = `<div class="error">Property REF "${propertyRef}" not found</div>`;
+                }
             } catch (error) {
-                document.getElementById('output').innerHTML = `<div class="debug-item"><strong>Error:</strong> ${error.message}</div>`;
+                console.error('Error fetching price:', error);
+                document.getElementById('pricing').innerHTML = '<div class="error">Unable to load price. Please try again later.</div>';
             }
         }
 
-        window.addEventListener('DOMContentLoaded', debugBoard);
+        // Fetch price when page loads
+        window.addEventListener('DOMContentLoaded', fetchPrice);
     </script>
 </body>
 </html>
