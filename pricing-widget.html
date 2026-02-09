@@ -5,129 +5,162 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
-            font-family: monospace;
-            margin: 20px;
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
             background: #f5f5f5;
         }
-        .apartment {
-            background: white;
+        .search-box {
+            width: 100%;
             padding: 15px;
-            margin: 10px 0;
-            border-left: 4px solid #C9B986;
+            font-size: 18px;
+            border: 2px solid #C9B986;
+            border-radius: 5px;
+            margin-bottom: 20px;
         }
-        .label {
-            color: #666;
-            font-weight: bold;
+        .result {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        .value {
-            color: #000;
+        .highlight {
             background: #ffffcc;
-            padding: 2px 5px;
+            padding: 5px 10px;
+            font-weight: bold;
+            font-size: 18px;
+            border-radius: 3px;
+        }
+        button {
+            background: #C9B986;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background: #b8a46e;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 40px;
         }
     </style>
 </head>
 <body>
-    <h1>Property REF Debug</h1>
-    <div id="output">Loading...</div>
+    <h1>Find Apartment Property REF</h1>
+    <p>Enter the apartment name to find its Property REF value:</p>
+    
+    <input type="text" id="apartmentName" class="search-box" placeholder="e.g., Résidence Villiers 1 bedroom" value="Résidence Villiers 1 bedroom">
+    <button onclick="searchApartment()">Search</button>
+    
+    <div id="result"></div>
 
     <script>
         const MONDAY_API_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjE4NDEzNjc3MiwidWlkIjoyNTA1OTE2OSwiaWFkIjoiMjAyMi0xMC0wM1QxNjo1OTo0My44MTJaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTAwNzQyNDUsInJnbiI6InVzZTEifQ.x9zltqwDc38J_rbuFt5jg3Ea-3Wq9b4s4yFBrnFuix8';
         const BOARD_ID = 2388987554;
         
-        async function debugPropertyRefs() {
-            document.getElementById('output').innerHTML = '<p>Loading all apartments (this may take a moment)...</p>';
+        async function searchApartment() {
+            const searchName = document.getElementById('apartmentName').value.trim();
             
-            let allItems = [];
-            let cursor = null;
-            let hasMore = true;
+            if (!searchName) {
+                document.getElementById('result').innerHTML = '<div class="result" style="color: red;">Please enter an apartment name</div>';
+                return;
+            }
             
-            try {
-                // Fetch all items using pagination
-                while (hasMore) {
-                    const query = `query {
-                        boards(ids: ${BOARD_ID}) {
-                            items_page(limit: 100${cursor ? `, cursor: "${cursor}"` : ''}) {
-                                cursor
-                                items {
-                                    id
-                                    name
-                                    column_values {
-                                        id
-                                        text
-                                    }
-                                }
+            document.getElementById('result').innerHTML = '<div class="loading">Searching...</div>';
+            
+            const query = `query {
+                boards(ids: ${BOARD_ID}) {
+                    items_page(limit: 500) {
+                        items {
+                            id
+                            name
+                            column_values {
+                                id
+                                text
                             }
                         }
-                    }`;
-
-                    const response = await fetch('https://api.monday.com/v2', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': MONDAY_API_TOKEN,
-                            'API-Version': '2024-01'
-                        },
-                        body: JSON.stringify({ query })
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.errors) {
-                        document.getElementById('output').innerHTML = `<div style="color: red;">ERROR: ${data.errors[0].message}</div>`;
-                        return;
                     }
-                    
-                    const pageData = data.data.boards[0].items_page;
-                    allItems = allItems.concat(pageData.items);
-                    
-                    cursor = pageData.cursor;
-                    hasMore = pageData.items.length === 100;
-                    
-                    document.getElementById('output').innerHTML = `<p>Loading... ${allItems.length} apartments loaded so far...</p>`;
+                }
+            }`;
+
+            try {
+                const response = await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': MONDAY_API_TOKEN,
+                        'API-Version': '2024-01'
+                    },
+                    body: JSON.stringify({ query })
+                });
+
+                const data = await response.json();
+                
+                if (data.errors) {
+                    document.getElementById('result').innerHTML = `<div class="result" style="color: red;">ERROR: ${data.errors[0].message}</div>`;
+                    return;
                 }
                 
-                // Now display all items
-                let output = `<p><strong>Total apartments found: ${allItems.length}</strong></p>`;
-                output += `<div style="margin: 20px 0;"><input type="text" id="searchBox" placeholder="Search apartment name or Property REF..." style="width: 100%; padding: 10px; font-size: 16px;" onkeyup="filterApartments()"></div>`;
-                output += `<div id="apartmentList">`;
+                const items = data.data.boards[0].items_page.items;
                 
-                allItems.forEach((item, index) => {
-                    const propRefCol = item.column_values.find(col => col.id === 'item_id');
-                    const priceCol = item.column_values.find(col => col.id === 'formula_mkzm99hj');
+                // Find apartment by exact or partial match
+                const found = items.find(item => 
+                    item.name.toLowerCase().includes(searchName.toLowerCase()) ||
+                    searchName.toLowerCase().includes(item.name.toLowerCase())
+                );
+                
+                if (found) {
+                    const propRefCol = found.column_values.find(col => col.id === 'item_id');
+                    const priceCol = found.column_values.find(col => col.id === 'formula_mkzm99hj');
                     
-                    output += `<div class="apartment" data-name="${item.name.toLowerCase()}" data-ref="${propRefCol ? propRefCol.text : ''}">`;
-                    output += `<div><span class="label">Apartment ${index + 1}:</span> ${item.name}</div>`;
-                    output += `<div><span class="label">Monday Item ID:</span> <span class="value">${item.id}</span></div>`;
-                    output += `<div><span class="label">Property REF (column 'item_id'):</span> <span class="value">${propRefCol ? propRefCol.text : 'NOT FOUND'}</span></div>`;
-                    output += `<div><span class="label">Price:</span> ${priceCol ? '£' + priceCol.text : 'N/A'}</div>`;
-                    output += `</div>`;
-                });
-                
-                output += `</div>`;
-                document.getElementById('output').innerHTML = output;
+                    let output = '<div class="result">';
+                    output += `<h2>✓ Found!</h2>`;
+                    output += `<p><strong>Apartment Name:</strong> ${found.name}</p>`;
+                    output += `<p><strong>Property REF Value:</strong><br><span class="highlight">${propRefCol ? propRefCol.text : 'NOT FOUND'}</span></p>`;
+                    output += `<p><strong>Price:</strong> ${priceCol ? '£' + priceCol.text + '/week' : 'N/A'}</p>`;
+                    output += `<hr>`;
+                    output += `<p><strong>Use this embed code on Squarespace:</strong></p>`;
+                    output += `<textarea readonly style="width: 100%; height: 100px; font-family: monospace; padding: 10px;">&lt;iframe src="https://YOUR-USERNAME.github.io/pricing-widget/pricing-widget.html?id=${propRefCol ? propRefCol.text : ''}" style="width: 100%; height: 120px; border: none; overflow: hidden;" scrolling="no" frameborder="0"&gt;&lt;/iframe&gt;</textarea>`;
+                    output += '</div>';
+                    
+                    document.getElementById('result').innerHTML = output;
+                } else {
+                    document.getElementById('result').innerHTML = `
+                        <div class="result" style="color: orange;">
+                            <h2>Not Found</h2>
+                            <p>Could not find apartment "${searchName}" in the first 500 items.</p>
+                            <p>Total items checked: ${items.length}</p>
+                            <p><strong>Try:</strong></p>
+                            <ul>
+                                <li>Check the spelling</li>
+                                <li>Try a shorter version of the name</li>
+                                <li>The apartment might be beyond item #500</li>
+                            </ul>
+                        </div>
+                    `;
+                }
                 
             } catch (error) {
-                document.getElementById('output').innerHTML = `<div style="color: red;">ERROR: ${error.message}</div>`;
+                document.getElementById('result').innerHTML = `<div class="result" style="color: red;">ERROR: ${error.message}</div>`;
             }
         }
         
-        function filterApartments() {
-            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
-            const apartments = document.querySelectorAll('.apartment');
-            
-            apartments.forEach(apt => {
-                const name = apt.getAttribute('data-name');
-                const ref = apt.getAttribute('data-ref').toLowerCase();
-                
-                if (name.includes(searchTerm) || ref.includes(searchTerm)) {
-                    apt.style.display = 'block';
-                } else {
-                    apt.style.display = 'none';
+        // Allow Enter key to search
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('apartmentName').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchApartment();
                 }
             });
-        }
-
-        window.addEventListener('DOMContentLoaded', debugPropertyRefs);
+        });
     </script>
 </body>
 </html>
